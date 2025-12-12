@@ -23,8 +23,15 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             cd ${{ secrets.PROJECT_DIR }}
             
-            # Use full paths for Node, npm, and PM2
-            /home/ubuntu/.nvm/versions/node/v24.12.0/bin/npm install --production
-            /home/ubuntu/.nvm/versions/node/v24.12.0/bin/npm run build
-            /home/ubuntu/.nvm/versions/node/v24.12.0/bin/pm2 reload mypreschool-backend || /home/ubuntu/.nvm/versions/node/v24.12.0/bin/pm2 start dist/main.js --name mypreschool-backend
+            # Load NVM so node, npm, pm2 are available
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+            # Install dependencies and build
+            npm install --production
+            npm run build
+
+            # Reload backend using PM2
+            pm2 reload mypreschool-backend || pm2 start dist/main.js --name mypreschool-backend
           EOF
