@@ -21,11 +21,13 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // CORS
-  app.enableCors({
-    // origin: [frontendUrl, 'http://localhost:5173', 'http://localhost:3000' , 'http://localhost:8080' , "https://mypreschoolpro.lovable.app" , "https://c822a4c69d6e.ngrok-free.app"],
-   origin: "*",
-    credentials: true,
-  });
+  // app.enableCors({
+  //   // origin: [frontendUrl, 'http://localhost:5173', 'http://localhost:3000' , 'http://localhost:8080' , "https://mypreschoolpro.lovable.app" , "https://c822a4c69d6e.ngrok-free.app"],
+  //   origin: true,
+  //   credentials: true,
+  // });
+
+  app.enableCors()
 
   // Global prefix
   app.setGlobalPrefix(apiPrefix || '');
