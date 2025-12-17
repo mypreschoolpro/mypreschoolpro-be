@@ -14,7 +14,7 @@ export const dataSourceOptions: DataSourceOptions = {
   entities: [path.join(__dirname, '../**/*.entity{.ts,.js}')],
   migrations: [path.join(__dirname, 'migrations/*{.ts,.js}')],
   synchronize: false,
-  logging: configService.get('NODE_ENV') === 'development',
+  logging: false, // Disable query logging to reduce console noise
   ssl: configService.get('DATABASE_URL')?.includes('localhost')
     ? false
     : { rejectUnauthorized: false },

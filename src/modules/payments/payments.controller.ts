@@ -189,13 +189,13 @@ export class PaymentsController {
   /**
    * Process CardConnect payment using token from iframe tokenizer
    * POST /api/payments/process-cardconnect
+   * Public endpoint for waitlist payments from public intake forms
    */
+  @Public()
   @Post('process-cardconnect')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Process CardConnect payment with token',
-    description: 'Process a payment using a token from CardConnect iframe tokenizer. This endpoint accepts tokenized payment data for PCI-compliant processing.',
+    description: 'Process a payment using a token from CardConnect iframe tokenizer. This endpoint accepts tokenized payment data for PCI-compliant processing. Public endpoint for waitlist payments.',
   })
   @ApiBody({
     schema: {
@@ -261,6 +261,7 @@ export class PaymentsController {
       invoiceId?: string;
       leadId?: string;
       paymentType?: string;
+      userId?: string; // Allow userId to be passed in body for public endpoints
       billingInfo?: {
         name?: string;
         email?: string;
@@ -270,9 +271,13 @@ export class PaymentsController {
         zip?: string;
       };
     },
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user?: AuthUser,
   ) {
     try {
+      // Use userId from body if provided (for public endpoints), otherwise use authenticated user
+      const userId = body.userId || user?.id;
+      const userEmail = user?.email || body.billingInfo?.email;
+      
       const { payment, transaction } = await this.paymentsService.createPayment(
         PaymentProvider.CARDCONNECT,
         {
@@ -291,8 +296,9 @@ export class PaymentsController {
             invoiceId: body.invoiceId,
             paymentType: body.paymentType,
             leadId: body.leadId,
-            userId: user.id,
-            userEmail: user.email,
+            userId: userId, // Use userId from body or authenticated user
+            schoolId: body.schoolId, // Ensure schoolId is passed to metadata
+            userEmail: userEmail,
           },
         },
       );
@@ -906,7 +912,20 @@ export class PaymentsController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get transactions',
-    description: 'Get payment transactions. Supports filtering by payment type (e.g., subscription types) and status.',
+    description: 'Get payment transactions with filtering, search, sorting, and pagination support.',
+  })
+  @ApiQuery({
+    name: 'schoolId',
+    required: false,
+    type: String,
+    description: 'Filter by school ID',
+  })
+  @ApiQuery({
+    name: 'paymentType',
+    required: false,
+    type: String,
+    description: 'Filter by payment type (comma-separated for multiple values)',
+    example: 'subscription,one_time_payment',
   })
   @ApiQuery({
     name: 'status',
@@ -915,26 +934,107 @@ export class PaymentsController {
     description: 'Filter by transaction status (comma-separated for multiple values, e.g., completed,paid)',
     example: 'completed,paid',
   })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search by transaction ID, description, or cardconnect/stripe transaction ID',
+    example: '48727d14-24b0-4457-89ee-9f477a2cba1',
+  })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    type: String,
+    description: 'Filter transactions from this date (ISO 8601 format)',
+    example: '2024-01-01T00:00:00Z',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    type: String,
+    description: 'Filter transactions until this date (ISO 8601 format)',
+    example: '2024-01-31T23:59:59Z',
+  })
+  @ApiQuery({
+    name: 'minAmount',
+    required: false,
+    type: Number,
+    description: 'Minimum amount in cents',
+    example: 1000,
+  })
+  @ApiQuery({
+    name: 'maxAmount',
+    required: false,
+    type: Number,
+    description: 'Maximum amount in cents',
+    example: 100000,
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    description: 'Sort by field (createdAt, amount)',
+    example: 'createdAt',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    type: String,
+    description: 'Sort order (asc, desc)',
+    example: 'desc',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of transactions to return',
+    example: 20,
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of transactions to skip',
+    example: 0,
+  })
   @ApiResponse({
     status: 200,
     description: 'Transactions retrieved successfully',
-    type: [TransactionResponseDto],
+    schema: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/TransactionResponseDto' },
+        },
+        total: { type: 'number', example: 100 },
+      },
+    },
   })
   async getTransactions(
     @CurrentUser() user: AuthUser,
     @Query('schoolId') schoolId?: string,
     @Query('paymentType') paymentType?: string,
     @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('minAmount') minAmount?: number,
+    @Query('maxAmount') maxAmount?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ) {
     const queryBuilder = this.transactionRepository
       .createQueryBuilder('transaction')
-      .leftJoinAndSelect('transaction.school', 'school')
-      .orderBy('transaction.createdAt', 'DESC');
+      .leftJoinAndSelect('transaction.school', 'school');
 
     // Access control
-    if (user.primaryRole === AppRole.SCHOOL_OWNER) {
+    // Super admins can see all transactions (no filter applied)
+    if (user.primaryRole === AppRole.SUPER_ADMIN) {
+      // No filter - super admin sees all transactions
+    } else if (user.primaryRole === AppRole.SCHOOL_OWNER) {
       const ownedSchools = await this.schoolRepository.find({
         where: { ownerId: user.id },
         select: ['id'],
@@ -945,7 +1045,7 @@ export class PaymentsController {
           schoolIds: ownedSchoolIds,
         });
       } else {
-        return [];
+        return { data: [], total: 0 };
       }
     } else if (schoolId) {
       queryBuilder.where('transaction.schoolId = :schoolId', { schoolId });
@@ -955,8 +1055,8 @@ export class PaymentsController {
       queryBuilder.where('transaction.userId = :userId', { userId: user.id });
     }
 
-    // Filter by payment type (for subscription-related transactions)
-    if (paymentType) {
+    // Filter by payment type
+    if (paymentType && paymentType !== 'all') {
       const paymentTypes = paymentType.split(',');
       queryBuilder.andWhere('transaction.paymentType IN (:...paymentTypes)', {
         paymentTypes,
@@ -964,13 +1064,55 @@ export class PaymentsController {
     }
 
     // Filter by status
-    if (status) {
+    if (status && status !== 'all') {
       const statuses = status.split(',');
       queryBuilder.andWhere('transaction.status IN (:...statuses)', {
         statuses,
       });
     }
 
+    // Search filter - search by transaction ID, description, or cardconnect/stripe transaction ID
+    // Cast UUID to text for ILIKE comparison
+    if (search) {
+      queryBuilder.andWhere(
+        '(CAST(transaction.id AS TEXT) ILIKE :search OR transaction.description ILIKE :search OR transaction.cardconnectTransactionId ILIKE :search OR transaction.stripePaymentIntentId ILIKE :search)',
+        { search: `%${search}%` }
+      );
+    }
+
+    // Date range filter
+    if (startDate) {
+      queryBuilder.andWhere('transaction.createdAt >= :startDate', {
+        startDate: new Date(startDate),
+      });
+    }
+    if (endDate) {
+      queryBuilder.andWhere('transaction.createdAt <= :endDate', {
+        endDate: new Date(endDate),
+      });
+    }
+
+    // Amount range filter
+    if (minAmount !== undefined) {
+      queryBuilder.andWhere('transaction.amount >= :minAmount', {
+        minAmount,
+      });
+    }
+    if (maxAmount !== undefined) {
+      queryBuilder.andWhere('transaction.amount <= :maxAmount', {
+        maxAmount,
+      });
+    }
+
+    // Sorting
+    const sortField = sortBy === 'amount' ? 'transaction.amount' : 'transaction.createdAt';
+    const sortDirection = sortOrder === 'asc' ? 'ASC' : 'DESC';
+    queryBuilder.orderBy(sortField, sortDirection);
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Pagination
     if (limit) {
       queryBuilder.limit(limit);
     }
@@ -980,24 +1122,27 @@ export class PaymentsController {
 
     const transactions = await queryBuilder.getMany();
 
-    return transactions.map(transaction => ({
-      id: transaction.id,
-      userId: transaction.userId,
-      schoolId: transaction.schoolId,
-      subscriptionId: transaction.subscriptionId,
-      amount: transaction.amount,
-      currency: transaction.currency,
-      status: transaction.status,
-      paymentType: transaction.paymentType,
-      description: transaction.description,
-      stripePaymentIntentId: transaction.stripePaymentIntentId,
-      stripeSessionId: transaction.stripeSessionId,
-      cardconnectTransactionId: transaction.cardconnectTransactionId,
-      metadata: transaction.metadata,
-      schoolName: transaction.school?.name || null,
-      createdAt: transaction.createdAt.toISOString(),
-      updatedAt: transaction.updatedAt.toISOString(),
-    }));
+    return {
+      data: transactions.map(transaction => ({
+        id: transaction.id,
+        userId: transaction.userId,
+        schoolId: transaction.schoolId,
+        subscriptionId: transaction.subscriptionId,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        status: transaction.status,
+        paymentType: transaction.paymentType,
+        description: transaction.description,
+        stripePaymentIntentId: transaction.stripePaymentIntentId,
+        stripeSessionId: transaction.stripeSessionId,
+        cardconnectTransactionId: transaction.cardconnectTransactionId,
+        metadata: transaction.metadata,
+        schoolName: transaction.school?.name || null,
+        createdAt: transaction.createdAt.toISOString(),
+        updatedAt: transaction.updatedAt.toISOString(),
+      })),
+      total,
+    };
   }
 
   /**
@@ -1025,6 +1170,13 @@ export class PaymentsController {
     description: 'Filter by school ID',
   })
   @ApiQuery({
+    name: 'paymentType',
+    required: false,
+    type: String,
+    description: 'Filter by payment type (e.g., subscription, waitlist_fee)',
+    example: 'subscription',
+  })
+  @ApiQuery({
     name: 'startDate',
     required: false,
     type: String,
@@ -1045,6 +1197,7 @@ export class PaymentsController {
       type: 'object',
       properties: {
         sum: { type: 'number', example: 5000000 },
+        count: { type: 'number', example: 10 },
       },
     },
   })
@@ -1052,12 +1205,14 @@ export class PaymentsController {
     @CurrentUser() user: AuthUser,
     @Query('status') status?: string,
     @Query('schoolId') schoolId?: string,
+    @Query('paymentType') paymentType?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-  ): Promise<{ sum: number }> {
+  ): Promise<{ sum: number; count: number }> {
     const queryBuilder = this.transactionRepository
       .createQueryBuilder('transaction')
-      .select('SUM(transaction.amount)', 'sum');
+      .select('SUM(transaction.amount)', 'sum')
+      .addSelect('COUNT(transaction.id)', 'count');
 
     // Access control
     if (user.primaryRole === AppRole.SCHOOL_OWNER) {
@@ -1071,7 +1226,7 @@ export class PaymentsController {
           schoolIds: ownedSchoolIds,
         });
       } else {
-        return { sum: 0 };
+        return { sum: 0, count: 0 };
       }
     } else if (schoolId) {
       queryBuilder.where('transaction.schoolId = :schoolId', { schoolId });
@@ -1081,8 +1236,19 @@ export class PaymentsController {
       queryBuilder.where('transaction.userId = :userId', { userId: user.id });
     }
 
+    // Status filtering (supports comma-separated values)
     if (status) {
-      queryBuilder.andWhere('transaction.status = :status', { status });
+      const statuses = status.split(',').map(s => s.trim());
+      if (statuses.length === 1) {
+        queryBuilder.andWhere('transaction.status = :status', { status: statuses[0] });
+      } else {
+        queryBuilder.andWhere('transaction.status IN (:...statuses)', { statuses });
+      }
+    }
+
+    // Payment type filtering
+    if (paymentType) {
+      queryBuilder.andWhere('transaction.paymentType = :paymentType', { paymentType });
     }
 
     // Date filtering
@@ -1094,6 +1260,9 @@ export class PaymentsController {
     }
 
     const result = await queryBuilder.getRawOne();
-    return { sum: parseInt(result?.sum || '0', 10) };
+    return { 
+      sum: parseInt(result?.sum || '0', 10),
+      count: parseInt(result?.count || '0', 10)
+    };
   }
 }

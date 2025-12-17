@@ -267,13 +267,17 @@ export class UsersService {
   }
 
   /**
-   * Update last login timestamp
+   * Update last login timestamp and increment login count
    */
   async updateLastLogin(userId: string): Promise<void> {
-    // Update profile's updated_at as a proxy for last login
-    // Supabase Auth tracks last_sign_in_at automatically
+    // Get current login count
+    const profile = await this.profileRepository.findOne({ where: { id: userId } });
+    const currentLoginCount = profile?.loginCount || 0;
+    
+    // Update profile's updated_at and increment login count
     await this.profileRepository.update(userId, {
       updatedAt: new Date(),
+      loginCount: currentLoginCount + 1,
     });
   }
 
@@ -291,6 +295,34 @@ export class UsersService {
   /**
    * Get roles for multiple users (batch)
    */
+  /**
+   * Get login counts for multiple users (batch)
+   */
+  async getLoginCountsByUserIds(userIds: string[]): Promise<Record<string, number>> {
+    if (userIds.length === 0) {
+      return {};
+    }
+
+    const profiles = await this.profileRepository.find({
+      where: { id: In(userIds) },
+      select: ['id', 'loginCount'],
+    });
+
+    const loginCountsMap: Record<string, number> = {};
+    profiles.forEach((profile) => {
+      loginCountsMap[profile.id] = profile.loginCount || 0;
+    });
+
+    // Ensure all requested userIds are in the map (set to 0 if not found)
+    userIds.forEach((userId) => {
+      if (!(userId in loginCountsMap)) {
+        loginCountsMap[userId] = 0;
+      }
+    });
+
+    return loginCountsMap;
+  }
+
   async findRolesByUserIds(userIds: string[]): Promise<Record<string, UserRoleEntity[]>> {
     if (userIds.length === 0) {
       return {};

@@ -93,10 +93,6 @@ export class CardConnectProvider implements IPaymentProvider {
       this.logger.log(`Creating CardConnect payment for ${options.amount} cents`);
 
       const metadata = options.metadata || {};
-
-
-      console.log('metadata', metadata);
-
       // Check if using token (from iframe tokenizer) or direct card data
       const isTokenPayment = !!metadata.token;
       const isDirectPayment = !!(metadata.cardNumber && metadata.expiry && metadata.cvv);

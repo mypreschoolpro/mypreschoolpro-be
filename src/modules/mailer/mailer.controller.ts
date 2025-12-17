@@ -16,6 +16,7 @@ import { SendPaymentEmailDto } from './dto/payment-email.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import type { AuthUser } from '../auth/interfaces/auth-user.interface';
 // import { UserResponseDto } from './dto/user-response.dto';
 import { AppRole } from '../../common/enums/app-role.enum';
@@ -156,6 +157,51 @@ export class MailerController {
       invitedBy: dto.invitedBy,
       invitationToken: dto.invitationToken,
       invitationLink: dto.invitationLink,
+    });
+
+    return {
+      success: result.success,
+      emailId: result.emailId,
+    };
+  }
+
+  @Public()
+  @Post('payment/public')
+  @ApiOperation({
+    summary: 'Send payment confirmation email (public)',
+    description: 'Send payment confirmation emails for public forms (e.g., waitlist payments). No authentication required.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Payment email sent successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        emailId: { type: 'string', example: 're_abc123xyz' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid payment email data',
+  })
+  async sendPublicPaymentEmail(@Body() dto: SendPaymentEmailDto) {
+    this.logger.log(`Sending public payment email (${dto.type}) to ${dto.recipientEmail}`);
+
+    const result = await this.mailerService.sendPaymentEmail({
+      type: dto.type,
+      recipientEmail: dto.recipientEmail,
+      recipientName: dto.recipientName,
+      schoolName: dto.schoolName,
+      amount: dto.amount,
+      currency: dto.currency,
+      invoiceNumber: dto.invoiceNumber,
+      dueDate: dto.dueDate,
+      paymentDate: dto.paymentDate,
+      paymentUrl: dto.paymentUrl,
+      userId: dto.userId,
+      schoolId: dto.schoolId,
+      metadata: dto.metadata,
     });
 
     return {

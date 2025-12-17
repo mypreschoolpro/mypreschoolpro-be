@@ -17,7 +17,7 @@ export default registerAs(
       url: dbUrl,
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
       synchronize: false, // NEVER true in production
-      logging: process.env.NODE_ENV === 'development',
+      logging: false, // Disable query logging to reduce console noise
       ssl: dbUrl.includes('localhost')
         ? false
         : { rejectUnauthorized: false },

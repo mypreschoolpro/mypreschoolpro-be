@@ -33,7 +33,7 @@ import { SchoolEntity } from '../modules/schools/entities/school.entity';
             rejectUnauthorized: false, // Supabase uses SSL
           },
           synchronize: false, // Never auto-sync in production
-          logging: configService.get<string>('NODE_ENV') === 'development',
+          logging: false, // Disable query logging to reduce console noise
           entities: [
             ProfileEntity,
             UserRoleEntity,

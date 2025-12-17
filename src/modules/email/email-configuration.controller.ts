@@ -86,7 +86,6 @@ export class EmailConfigurationController {
     @Body() createEmailConfigurationDto: CreateEmailConfigurationDto,
     @CurrentUser() user: AuthUser,
   ): Promise<EmailConfigurationResponseDto> {
-    console.log('createEmailConfigurationDto', createEmailConfigurationDto);
     const config = await this.emailConfigurationService.upsert(
       createEmailConfigurationDto,
       user.id,

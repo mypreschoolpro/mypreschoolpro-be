@@ -182,10 +182,7 @@ export class ParentRegistrationService {
   async createWaitlistPaymentSession(
     dto: WaitlistPaymentSessionDto,
   ): Promise<WaitlistPaymentResponseDto> {
-    if (!this.stripe) {
-      throw new BadRequestException('Stripe is not configured');
-    }
-
+    // Verify lead exists
     const lead = await this.leadsRepository.findOne({
       where: { id: dto.leadId },
       select: ['id', 'parentEmail'],
@@ -195,32 +192,8 @@ export class ParentRegistrationService {
       throw new NotFoundException('Lead not found');
     }
 
-    const customerEmail = lead.parentEmail || 'guest@checkout.local';
-
-    const session = await this.stripe.checkout.sessions.create({
-      customer_email: customerEmail,
-      mode: 'payment',
-      line_items: [
-        {
-          price_data: {
-            currency: dto.currency,
-            unit_amount: dto.amount,
-            product_data: {
-              name: dto.description,
-            },
-          },
-          quantity: 1,
-        },
-      ],
-      success_url: `${this.frontendUrl}/waitlist-payment-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${this.frontendUrl}/payment-canceled`,
-      metadata: {
-        leadId: dto.leadId,
-        schoolId: dto.schoolId,
-        paymentType: dto.paymentType,
-      },
-    });
-
+    // Create pending transaction record for CardConnect payment
+    // The actual payment will be processed via /payments/process-cardconnect endpoint
     const transaction = this.transactionRepository.create({
       userId: null,
       schoolId: dto.schoolId,
@@ -229,7 +202,6 @@ export class ParentRegistrationService {
       status: PaymentStatus.PENDING,
       paymentType: dto.paymentType,
       description: dto.description,
-      stripeSessionId: session.id,
       metadata: {
         leadId: dto.leadId,
         schoolId: dto.schoolId,
@@ -238,7 +210,9 @@ export class ParentRegistrationService {
 
     await this.transactionRepository.save(transaction);
 
-    return { url: session.url || '' };
+    // Return empty URL - frontend will handle CardConnect payment form inline
+    // The transaction ID can be used to track the payment
+    return { url: '' };
   }
 
   async uploadDocument(dto: UploadDocumentDto, file: Express.Multer.File, user?: AuthUser) {

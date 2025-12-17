@@ -97,8 +97,8 @@ export class SchoolResponseDto {
   subscriptionAmount: number;
 
   @ApiProperty({
-    description: 'Paid in advance period (in days)',
-    example: 0,
+    description: 'Paid in advance period (in months)',
+    example: 6,
   })
   paidInAdvancePeriod: number;
 

@@ -83,10 +83,6 @@ export class EmailConfigurationService {
     const existing = await this.emailConfigurationRepository.findOne({
       where: { schoolId: createEmailConfigurationDto.schoolId },
     });
-
-
-    console.log('existing', existing);
-
     if (existing) {
       // Update existing
       Object.assign(existing, {

@@ -68,7 +68,6 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    console.log('Finding user by email:', email);
     return this.usersRepository.findOne({
       where: { email },
       relations: ['profile', 'roles'],

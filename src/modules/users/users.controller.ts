@@ -235,6 +235,50 @@ export class UsersController {
     return result;
   }
 
+  @Get('login-counts/batch')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get login counts for multiple users (batch)',
+    description: 'Get login counts for multiple users in a single query. Returns a map of userId -> loginCount.',
+  })
+  @ApiQuery({
+    name: 'userIds',
+    required: true,
+    type: String,
+    description: 'Comma-separated list of user IDs',
+    example: 'uuid1,uuid2,uuid3',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Login counts retrieved successfully',
+    schema: {
+      type: 'object',
+      additionalProperties: {
+        type: 'number',
+      },
+      example: {
+        'uuid1': 15,
+        'uuid2': 3,
+        'uuid3': 0,
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  async getLoginCountsBatch(@Query('userIds') userIds: string): Promise<Record<string, number>> {
+    if (!userIds) {
+      throw new BadRequestException('userIds parameter is required');
+    }
+
+    const userIdArray = userIds.split(',').map((id) => id.trim()).filter(Boolean);
+    
+    if (userIdArray.length === 0) {
+      throw new BadRequestException('At least one user ID is required');
+    }
+
+    return this.usersService.getLoginCountsByUserIds(userIdArray);
+  }
+
   @Get('roles/count')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

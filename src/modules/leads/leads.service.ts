@@ -362,8 +362,6 @@ export class LeadsService {
       .orderBy('lead.created_at', 'DESC')
       .getMany();
 
-    console.log('Found leads:', leads.length);
-
     return leads;
   }
 

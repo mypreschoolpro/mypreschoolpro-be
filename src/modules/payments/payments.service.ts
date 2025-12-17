@@ -18,6 +18,7 @@ import { PaymentStatus as DbPaymentStatus } from '../../common/enums/payment-sta
 import { DatabaseService } from '../../database/database.service';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
+import { SchoolEntity, SchoolSubscriptionStatus } from '../schools/entities/school.entity';
 
 @Injectable()
 export class PaymentsService {
@@ -30,6 +31,8 @@ export class PaymentsService {
     private readonly transactionRepository: Repository<Transaction>,
     @InjectRepository(Subscription)
     private readonly subscriptionRepository: Repository<Subscription>,
+    @InjectRepository(SchoolEntity)
+    private readonly schoolRepository: Repository<SchoolEntity>,
     private readonly databaseService: DatabaseService,
   ) {
     this.logger.log('Payments service initialized with multiple providers');
@@ -203,12 +206,116 @@ export class PaymentsService {
       }
     }
 
+    // Handle subscription payments - update school subscription status
+    if (metadata.paymentType && metadata.paymentType.startsWith('subscription') && metadata.schoolId) {
+      // Extract subscription type from paymentType (e.g., "subscription_monthly" -> "monthly")
+      const subscriptionType = metadata.paymentType.includes('_') 
+        ? metadata.paymentType.split('_')[1] 
+        : 'monthly'; // Default to monthly if not specified
+      
+      await this.updateSchoolSubscriptionAfterPayment(
+        metadata.schoolId,
+        options.amount,
+        subscriptionType,
+        transaction.id,
+      );
+    }
+
     // Note: invoice_id column doesn't exist in transactions table
     // Invoice updates should be handled separately via invoice endpoints
 
     this.logger.log(
       `CardConnect transaction persisted: ${transaction.cardconnectTransactionId}`,
     );
+  }
+
+  /**
+   * Update school subscription after successful payment
+   * Extends the existing subscription period or creates a new one
+   */
+  private async updateSchoolSubscriptionAfterPayment(
+    schoolId: string,
+    amount: number,
+    paymentType: string,
+    transactionId: string,
+  ): Promise<void> {
+    try {
+      const school = await this.schoolRepository.findOne({
+        where: { id: schoolId },
+      });
+
+      if (!school) {
+        this.logger.warn(`School not found: ${schoolId}`);
+        return;
+      }
+
+      // Determine months based on payment type
+      // Payment types: monthly, quarterly, semi-annual, yearly
+      let months = 1;
+      const baseAmount = school.subscriptionAmount || 70000; // Default $700/month
+
+      if (paymentType === 'monthly') {
+        months = 1;
+      } else if (paymentType === 'quarterly') {
+        months = 3;
+      } else if (paymentType === 'semi-annual') {
+        months = 6;
+      } else if (paymentType === 'yearly') {
+        months = 12;
+      } else {
+        // Infer months from amount if paymentType is not specific
+        const ratio = amount / baseAmount;
+        if (Math.abs(ratio - 3) < 0.1) months = 3;
+        else if (Math.abs(ratio - 6 * 0.9) < 0.1) months = 6; // 10% discount
+        else if (Math.abs(ratio - 12 * 0.85) < 0.1) months = 12; // 15% discount
+        else if (ratio >= 10) months = 12;
+        else if (ratio >= 5) months = 6;
+        else if (ratio >= 2.5) months = 3;
+        else months = 1;
+      }
+
+      const now = new Date();
+      
+      // Calculate next payment due date
+      // If there's an existing nextPaymentDue date in the future, extend from that date
+      // Otherwise, extend from today
+      let nextPaymentDue: Date;
+      if (school.nextPaymentDue && school.nextPaymentDue > now) {
+        // Extend existing subscription period
+        nextPaymentDue = new Date(school.nextPaymentDue);
+        nextPaymentDue.setMonth(nextPaymentDue.getMonth() + months);
+        this.logger.log(
+          `Extending existing subscription for school ${schoolId}: adding ${months} months to existing due date ${school.nextPaymentDue.toISOString()}`,
+        );
+      } else {
+        // Start new subscription period from today
+        nextPaymentDue = new Date(now);
+        nextPaymentDue.setMonth(nextPaymentDue.getMonth() + months);
+        this.logger.log(
+          `Starting new subscription period for school ${schoolId}: ${months} months from today`,
+        );
+      }
+
+      // Update school subscription
+      school.subscriptionStatus = SchoolSubscriptionStatus.ACTIVE;
+      school.lastPaymentDate = now;
+      school.nextPaymentDue = nextPaymentDue;
+      // Update paidInAdvancePeriod to reflect the new period type
+      school.paidInAdvancePeriod = months;
+      school.accessDisabled = false; // Re-enable access if it was disabled
+      school.paymentRetryCount = 0; // Reset retry count
+
+      await this.schoolRepository.save(school);
+
+      this.logger.log(
+        `Updated school ${schoolId} subscription: ${months} months (${paymentType}), next payment due: ${nextPaymentDue.toISOString()}, last payment: ${now.toISOString()}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error updating school subscription after payment: ${error.message}`,
+        error.stack,
+      );
+    }
   }
 
   /**

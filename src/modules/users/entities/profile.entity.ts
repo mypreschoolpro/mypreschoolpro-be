@@ -42,6 +42,9 @@ export class ProfileEntity {
   @Column({ type: 'varchar', length: 64, default: 'active' })
   status: string;
 
+  @Column({ type: 'integer', default: 0, name: 'login_count' })
+  loginCount: number;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
