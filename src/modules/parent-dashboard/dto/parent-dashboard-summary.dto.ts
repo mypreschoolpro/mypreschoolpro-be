@@ -127,6 +127,12 @@ export class ParentInvoiceDto {
 
   @ApiProperty({ nullable: true })
   lead_id?: string | null;
+
+  @ApiProperty()
+  school_id: string;
+
+  @ApiProperty({ nullable: true })
+  transaction_id?: string | null;
 }
 
 

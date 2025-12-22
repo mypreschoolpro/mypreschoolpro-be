@@ -349,6 +349,9 @@ export class WaitlistService {
     // Get all accessible school IDs for the user
     const accessibleSchoolIds = new Set<string>();
 
+    console.log(user.primaryRole, AppRole.SCHOOL_OWNER, "Role Identification");
+
+
     // For school owners, query all schools they own
     if (user.primaryRole === AppRole.SCHOOL_OWNER) {
       const ownedSchools = await this.schoolRepository.find({

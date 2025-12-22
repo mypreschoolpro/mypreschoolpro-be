@@ -19,6 +19,9 @@ import { DatabaseService } from '../../database/database.service';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { SchoolEntity, SchoolSubscriptionStatus } from '../schools/entities/school.entity';
+import { Invoice } from '../invoices/entities/invoice.entity';
+import { LeadInvoice } from '../leads/entities/lead-invoice.entity';
+import { MailerService } from '../mailer/mailer.service';
 
 @Injectable()
 export class PaymentsService {
@@ -33,6 +36,11 @@ export class PaymentsService {
     private readonly subscriptionRepository: Repository<Subscription>,
     @InjectRepository(SchoolEntity)
     private readonly schoolRepository: Repository<SchoolEntity>,
+    @InjectRepository(Invoice)
+    private readonly invoiceRepository: Repository<Invoice>,
+    @InjectRepository(LeadInvoice)
+    private readonly leadInvoiceRepository: Repository<LeadInvoice>,
+    private readonly mailerService: MailerService,
     private readonly databaseService: DatabaseService,
   ) {
     this.logger.log('Payments service initialized with multiple providers');
@@ -209,10 +217,10 @@ export class PaymentsService {
     // Handle subscription payments - update school subscription status
     if (metadata.paymentType && metadata.paymentType.startsWith('subscription') && metadata.schoolId) {
       // Extract subscription type from paymentType (e.g., "subscription_monthly" -> "monthly")
-      const subscriptionType = metadata.paymentType.includes('_') 
-        ? metadata.paymentType.split('_')[1] 
+      const subscriptionType = metadata.paymentType.includes('_')
+        ? metadata.paymentType.split('_')[1]
         : 'monthly'; // Default to monthly if not specified
-      
+
       await this.updateSchoolSubscriptionAfterPayment(
         metadata.schoolId,
         options.amount,
@@ -221,12 +229,105 @@ export class PaymentsService {
       );
     }
 
-    // Note: invoice_id column doesn't exist in transactions table
-    // Invoice updates should be handled separately via invoice endpoints
+    // Handle standard invoice payments
+    let invoiceNumber = metadata.invoiceNumber;
+    if (metadata.invoiceId && (metadata.paymentType === 'invoice' || !metadata.paymentType)) {
+      invoiceNumber = await this.updateInvoiceStatus(metadata.invoiceId, transaction.id);
+    }
+
+    // Handle lead invoice payments
+    if (metadata.invoiceId && metadata.paymentType === 'lead_invoice') {
+      const res = await this.updateLeadInvoiceStatus(metadata.invoiceId, transaction.id);
+      if (res) invoiceNumber = res;
+    }
+
+    // Send payment confirmation email
+    await this.sendPaymentConfirmationEmail(payment, options, transaction, invoiceNumber);
 
     this.logger.log(
       `CardConnect transaction persisted: ${transaction.cardconnectTransactionId}`,
     );
+  }
+
+  private async updateInvoiceStatus(invoiceId: string, transactionId: string): Promise<string | null> {
+    try {
+      const invoice = await this.invoiceRepository.findOne({ where: { id: invoiceId } });
+      if (invoice) {
+        invoice.status = DbPaymentStatus.PAID;
+        invoice.paymentDate = new Date();
+        invoice.transactionId = transactionId;
+        await this.invoiceRepository.save(invoice);
+        this.logger.log(`Invoice ${invoiceId} marked as paid`);
+        return invoice.invoiceNumber;
+      }
+    } catch (error) {
+      this.logger.error(`Failed to update invoice status: ${error.message}`);
+    }
+    return null;
+  }
+
+  private async updateLeadInvoiceStatus(invoiceId: string, transactionId: string): Promise<string | null> {
+    try {
+      const leadInvoice = await this.leadInvoiceRepository.findOne({ where: { id: invoiceId } });
+      if (leadInvoice) {
+        leadInvoice.status = 'paid';
+        leadInvoice.paidAt = new Date();
+        // Assuming there's a way to store transaction ID or just mark as paid
+        await this.leadInvoiceRepository.save(leadInvoice);
+        this.logger.log(`Lead Invoice ${invoiceId} marked as paid`);
+        return leadInvoice.invoiceNumber;
+      }
+    } catch (error) {
+      this.logger.error(`Failed to update lead invoice status: ${error.message}`);
+    }
+    return null;
+  }
+
+  private async sendPaymentConfirmationEmail(
+    payment: PaymentIntent,
+    options: CreatePaymentOptions,
+    transaction: Transaction,
+    invoiceNumber?: string,
+  ): Promise<void> {
+    try {
+      const metadata = options.metadata || {};
+      const recipientEmail = metadata.userEmail || metadata.email;
+      const recipientName = metadata.name || metadata.cardholderName || 'Parent';
+
+      if (!recipientEmail) {
+        this.logger.warn('No recipient email found to send payment confirmation');
+        return;
+      }
+
+      // Fetch school name if schoolId is available
+      let schoolName = 'MyPreschoolPro';
+      if (metadata.schoolId) {
+        const school = await this.schoolRepository.findOne({
+          where: { id: metadata.schoolId },
+          select: ['name']
+        });
+        if (school) {
+          schoolName = school.name;
+        }
+      }
+
+      await this.mailerService.sendPaymentEmail({
+        recipientEmail,
+        recipientName,
+        schoolName,
+        amount: payment.amount,
+        currency: payment.currency || 'USD',
+        type: 'confirmation',
+        paymentDate: new Date().toISOString(),
+        invoiceNumber: invoiceNumber || metadata.invoiceNumber || metadata.invoiceId,
+        schoolId: metadata.schoolId,
+        userId: metadata.userId,
+      });
+
+      this.logger.log(`Payment confirmation email sent to ${recipientEmail}`);
+    } catch (error) {
+      this.logger.error(`Failed to send payment confirmation email: ${error.message}`);
+    }
   }
 
   /**
@@ -275,7 +376,7 @@ export class PaymentsService {
       }
 
       const now = new Date();
-      
+
       // Calculate next payment due date
       // If there's an existing nextPaymentDue date in the future, extend from that date
       // Otherwise, extend from today

@@ -12,6 +12,7 @@ import { EnrollmentEntity } from '../enrollment/entities/enrollment.entity';
 import { LeadEntity } from '../leads/entities/lead.entity';
 import { ClassEntity } from '../classes/entities/class.entity';
 import { SchoolEntity } from '../schools/entities/school.entity';
+import { Student } from '../students/entities/student.entity';
 import { CommunicationsService } from './communications.service';
 import { CommunicationsController } from './communications.controller';
 import { NotificationTemplateService } from './notification-template.service';
@@ -39,6 +40,7 @@ import { LeadActivity } from '../leads/entities/lead-activity.entity';
       LeadActivity,
       ClassEntity,
       SchoolEntity,
+      Student,
     ]),
     MailerModule,
     MediaModule,
@@ -61,5 +63,5 @@ import { LeadActivity } from '../leads/entities/lead-activity.entity';
     SystemNotificationService,
   ],
 })
-export class CommunicationsModule {}
+export class CommunicationsModule { }
 

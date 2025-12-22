@@ -105,6 +105,18 @@ export class ParentChildDto {
   @ApiPropertyOptional({ type: [ParentChildProgressDto] })
   progress?: ParentChildProgressDto[];
 
+  @ApiPropertyOptional()
+  studentId?: string | null;
+
+  @ApiPropertyOptional()
+  teacherId?: string | null;
+
+  @ApiPropertyOptional()
+  teacherName?: string | null;
+
+  @ApiPropertyOptional()
+  isCheckedIn?: boolean;
+
   @ApiPropertyOptional({ type: [ParentChildActivityDto] })
   recentActivities?: ParentChildActivityDto[];
 }

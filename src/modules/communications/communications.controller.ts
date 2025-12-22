@@ -20,6 +20,7 @@ import {
 import { CommunicationsService } from './communications.service';
 import { SendParentMessageDto } from './dto/send-parent-message.dto';
 import { ParentMessageResponseDto } from './dto/parent-message-response.dto';
+import { MessageResponseDto } from './dto/message-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -32,7 +33,7 @@ import { AppRole } from '../../common/enums/app-role.enum';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('communications')
 export class CommunicationsController {
-  constructor(private readonly communicationsService: CommunicationsService) {}
+  constructor(private readonly communicationsService: CommunicationsService) { }
 
   @Post('parent-messages')
   @Roles(AppRole.TEACHER, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.SCHOOL_OWNER)
@@ -101,6 +102,39 @@ export class CommunicationsController {
   @ApiForbiddenResponse({ description: 'Forbidden - can only mark own messages as read' })
   async markAsRead(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<void> {
     return this.communicationsService.markAsRead(id, user.id);
+  }
+
+  @Get('messages')
+  @Roles(AppRole.PARENT)
+  @ApiOperation({
+    summary: 'Get general messages for parent',
+    description: 'Retrieve all general messages (not direct parent-teacher) sent to the authenticated parent.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Messages retrieved successfully',
+    type: [MessageResponseDto],
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  async getMessages(@CurrentUser() user: AuthUser): Promise<MessageResponseDto[]> {
+    return this.communicationsService.getMessages(user.id);
+  }
+
+  @Patch('messages/:id/read')
+  @Roles(AppRole.PARENT)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Mark general message as read',
+    description: 'Mark a general message as read by the authenticated parent.',
+  })
+  @ApiResponse({
+    status: 204,
+    description: 'Message marked as read',
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  @ApiForbiddenResponse({ description: 'Forbidden - can only mark own messages as read' })
+  async markMessageRead(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<void> {
+    return this.communicationsService.markMessageRead(id, user.id);
   }
 }
 

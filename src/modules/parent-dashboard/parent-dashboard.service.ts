@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, IsNull, MoreThanOrEqual, Repository } from 'typeorm';
 import { LeadsService } from '../leads/leads.service';
 import { Waitlist } from '../enrollment/entities/waitlist.entity';
 import { LeadInvoice } from '../leads/entities/lead-invoice.entity';
@@ -30,6 +30,8 @@ import { StudentAttendance } from '../students/entities/student-attendance.entit
 import { DailyReport } from '../teachers/entities/daily-report.entity';
 import { LeadActivity } from '../leads/entities/lead-activity.entity';
 import { Media } from '../media/entities/media.entity';
+import { CheckInOutRecord } from '../checkinout/entities/check-in-out-record.entity';
+import { ProfileEntity } from '../users/entities/profile.entity';
 
 @Injectable()
 export class ParentDashboardService {
@@ -61,8 +63,12 @@ export class ParentDashboardService {
     private readonly leadActivityRepository: Repository<LeadActivity>,
     @InjectRepository(DailyReport)
     private readonly dailyReportRepository: Repository<DailyReport>,
+    @InjectRepository(CheckInOutRecord)
+    private readonly checkInOutRepository: Repository<CheckInOutRecord>,
+    @InjectRepository(ProfileEntity)
+    private readonly profileRepository: Repository<ProfileEntity>,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   async getSummary(user: AuthUser): Promise<ParentDashboardSummaryDto> {
     if (!user.email) {
@@ -98,17 +104,21 @@ export class ParentDashboardService {
     };
   }
 
-  async getChildren(user: AuthUser): Promise<ParentChildDto[]> {
+  async getChildren(user: AuthUser, status?: LeadStatus): Promise<ParentChildDto[]> {
     if (!user.email) {
       throw new BadRequestException('Parent email is required');
     }
 
-    const leads = await this.leadRepository
+    const query = this.leadRepository
       .createQueryBuilder('lead')
       .leftJoinAndSelect('lead.school', 'school')
-      .where('LOWER(lead.parentEmail) = LOWER(:email)', { email: user.email })
-      .orderBy('lead.createdAt', 'DESC')
-      .getMany();
+      .where('LOWER(lead.parentEmail) = LOWER(:email)', { email: user.email });
+
+    if (status) {
+      query.andWhere('lead.leadStatus = :status', { status });
+    }
+
+    const leads = await query.orderBy('lead.createdAt', 'DESC').getMany();
 
     const children: ParentChildDto[] = [];
 
@@ -137,17 +147,21 @@ export class ParentDashboardService {
         schoolName: lead.school?.name ?? null,
         createdAt: this.toIsoString(lead.createdAt),
         updatedAt: this.toIsoString(lead.updatedAt),
+        teacherId: lead.assignedTo,
+        teacherName: lead.assignedTo ? await this.getProfileName(lead.assignedTo) : 'Unassigned',
         enrollment,
         waitlist: waitlist
           ? {
-              id: waitlist.id,
-              status: waitlist.status,
-              position: waitlist.waitlistPosition,
-              program: waitlist.program,
-              createdAt: waitlist.createdAt?.toISOString() ?? null,
-            }
+            id: waitlist.id,
+            status: waitlist.status,
+            position: waitlist.waitlistPosition,
+            program: waitlist.program,
+            createdAt: waitlist.createdAt?.toISOString() ?? null,
+          }
           : null,
         progress,
+        studentId: student?.id ?? null,
+        isCheckedIn: student ? await this.isStudentCheckedIn(student.id) : false,
         recentActivities: activities,
       });
     }
@@ -257,7 +271,7 @@ export class ParentDashboardService {
 
     // Filter by childId if provided
     const filteredLeads = childId ? leads.filter(lead => lead.id === childId) : leads;
-    
+
     if (filteredLeads.length === 0) {
       return {
         data: [],
@@ -276,10 +290,10 @@ export class ParentDashboardService {
     // Build query to fetch reports for all children
     // Match by studentId OR by student_names array containing child names
     const childNames = filteredLeads.map((lead) => lead.childName).filter(Boolean);
-    
+
     // Use raw SQL for better performance with array matching
     const lowerChildNames = childNames.map(name => name.toLowerCase());
-    
+
     // Build WHERE conditions
     const whereConditions: string[] = [
       `(
@@ -627,6 +641,22 @@ export class ParentDashboardService {
     }));
   }
 
+  private async isStudentCheckedIn(studentId: string): Promise<boolean> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const checkIn = await this.checkInOutRepository.findOne({
+      where: {
+        studentId,
+        checkInTime: MoreThanOrEqual(today),
+        checkOutTime: IsNull(),
+      },
+      select: ['id'],
+    });
+
+    return !!checkIn;
+  }
+
   private async ensureLeadBelongsToParent(leadId: string, user: AuthUser): Promise<LeadEntity> {
     const lead = await this.leadRepository.findOne({ where: { id: leadId } });
     if (!lead) {
@@ -789,6 +819,9 @@ export class ParentDashboardService {
         notes: inv.notes ?? null,
         source: 'invoice' as const,
         lead_id: inv.leadId ?? null,
+        school_id: inv.schoolId,
+        school_name: inv.school?.name || 'Preschool',
+        transaction_id: inv.transactionId ?? inv.stripePaymentIntentId ?? null,
       })),
       ...leadInvoices.map((inv) => ({
         id: inv.id,
@@ -802,6 +835,9 @@ export class ParentDashboardService {
         notes: inv.notes ?? null,
         source: 'lead_invoice' as const,
         lead_id: inv.leadId ?? null,
+        school_id: inv.schoolId,
+        school_name: inv.school?.name || 'Preschool',
+        transaction_id: inv.stripePaymentIntentId ?? null,
       })),
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
@@ -815,6 +851,7 @@ export class ParentDashboardService {
   ): Promise<LeadInvoice[]> {
     const query = this.leadInvoiceRepository
       .createQueryBuilder('invoice')
+      .leftJoinAndSelect('invoice.school', 'school')
       .where('LOWER(invoice.parentEmail) = LOWER(:email)', { email: parentEmail })
       .orderBy('invoice.createdAt', 'DESC')
       .take(limit);
@@ -834,6 +871,7 @@ export class ParentDashboardService {
   ): Promise<Invoice[]> {
     const query = this.invoiceRepository
       .createQueryBuilder('invoice')
+      .leftJoinAndSelect('invoice.school', 'school')
       .orderBy('invoice.createdAt', 'DESC')
       .take(limit);
 

@@ -13,6 +13,9 @@ import { Payment } from './entities/payment.entity';
 import { SchoolPayment } from '../schools/entities/school-payment.entity';
 import { SchoolEntity } from '../schools/entities/school.entity';
 import { DatabaseService } from '../../database/database.service';
+import { Invoice } from '../invoices/entities/invoice.entity';
+import { LeadInvoice } from '../leads/entities/lead-invoice.entity';
+import { MailerModule } from '../mailer/mailer.module';
 
 @Module({
   imports: [
@@ -25,10 +28,13 @@ import { DatabaseService } from '../../database/database.service';
       Payment,
       SchoolPayment,
       SchoolEntity,
+      Invoice,
+      LeadInvoice,
     ]),
+    MailerModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService, StripeProvider, CardConnectProvider, DatabaseService],
   exports: [PaymentsService],
 })
-export class PaymentsModule {}
+export class PaymentsModule { }

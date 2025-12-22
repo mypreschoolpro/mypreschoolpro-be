@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { Message, MessageType } from './entities/message.entity';
 import { ParentMessage, ParentMessageType } from './entities/parent-message.entity';
+import { MessageResponseDto } from './dto/message-response.dto';
 import { SendParentMessageDto } from './dto/send-parent-message.dto';
 import { ParentMessageResponseDto } from './dto/parent-message-response.dto';
 import { ProfileEntity } from '../users/entities/profile.entity';
@@ -18,6 +20,7 @@ import { ClassEntity } from '../classes/entities/class.entity';
 import { AppRole } from '../../common/enums/app-role.enum';
 import { MailerService } from '../mailer/mailer.service';
 import { LeadActivity } from '../leads/entities/lead-activity.entity';
+import { Student } from '../students/entities/student.entity';
 
 @Injectable()
 export class CommunicationsService {
@@ -26,6 +29,8 @@ export class CommunicationsService {
   constructor(
     @InjectRepository(ParentMessage)
     private readonly parentMessageRepository: Repository<ParentMessage>,
+    @InjectRepository(Message)
+    private readonly messageRepository: Repository<Message>,
     @InjectRepository(ProfileEntity)
     private readonly profileRepository: Repository<ProfileEntity>,
     @InjectRepository(UserRoleEntity)
@@ -38,8 +43,10 @@ export class CommunicationsService {
     private readonly classRepository: Repository<ClassEntity>,
     @InjectRepository(LeadActivity)
     private readonly leadActivityRepository: Repository<LeadActivity>,
+    @InjectRepository(Student)
+    private readonly studentRepository: Repository<Student>,
     private readonly mailerService: MailerService,
-  ) {}
+  ) { }
 
   /**
    * Send message from teacher/admin to parent
@@ -107,7 +114,7 @@ export class CommunicationsService {
            LIMIT 1`,
           [dto.studentId, EnrollmentStatus.ACTIVE, senderId, recipientProfile.email],
         );
-        
+
         const enrollment = enrollmentResult && enrollmentResult.length > 0 ? enrollmentResult[0] : null;
 
         if (!enrollment) {
@@ -128,7 +135,7 @@ export class CommunicationsService {
            LIMIT 1`,
           [senderId, EnrollmentStatus.ACTIVE, recipientProfile.email],
         );
-        
+
         const enrollment = enrollmentResult && enrollmentResult.length > 0 ? enrollmentResult[0] : null;
 
         if (!enrollment) {
@@ -266,9 +273,9 @@ export class CommunicationsService {
     const teacherIds = [...new Set(messages.map((m) => m.teacherId))];
     const teacherProfiles = teacherIds.length > 0
       ? await this.profileRepository.find({
-          where: { id: In(teacherIds) },
-          select: ['id', 'firstName', 'lastName'],
-        })
+        where: { id: In(teacherIds) },
+        select: ['id', 'firstName', 'lastName'],
+      })
       : [];
 
     const teacherMap = new Map(
@@ -308,9 +315,9 @@ export class CommunicationsService {
     const parentIds = [...new Set(messages.map((m) => m.parentId))];
     const parentProfiles = parentIds.length > 0
       ? await this.profileRepository.find({
-          where: { id: In(parentIds) },
-          select: ['id', 'firstName', 'lastName'],
-        })
+        where: { id: In(parentIds) },
+        select: ['id', 'firstName', 'lastName'],
+      })
       : [];
 
     const parentMap = new Map(
@@ -369,6 +376,70 @@ export class CommunicationsService {
       [ParentMessageType.ATTENDANCE]: 'Attendance Issue',
     };
     return labels[type] || 'Message';
+  }
+
+  /**
+   * Get messages for a recipient (general messages)
+   */
+  async getMessages(recipientId: string): Promise<MessageResponseDto[]> {
+    const messages = await this.messageRepository.find({
+      where: { recipientId },
+      order: { createdAt: 'DESC' },
+      take: 50,
+      relations: ['student'],
+    });
+
+    // Get sender profiles
+    const senderIds = [...new Set(messages.map((m) => m.senderId))];
+    const senderProfiles = senderIds.length > 0
+      ? await this.profileRepository.find({
+        where: { id: In(senderIds) },
+        select: ['id', 'firstName', 'lastName'],
+      })
+      : [];
+
+    const senderMap = new Map(
+      senderProfiles.map((p) => [
+        p.id,
+        `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Staff',
+      ]),
+    );
+
+    return messages.map((message) => ({
+      id: message.id,
+      senderId: message.senderId,
+      senderName: senderMap.get(message.senderId) || 'Staff',
+      recipientId: message.recipientId,
+      studentId: message.studentId,
+      studentName: message.student ? `${message.student.firstName} ${message.student.lastName}` : undefined,
+      subject: message.subject,
+      content: message.content,
+      isRead: message.isRead,
+      messageType: message.messageType,
+      createdAt: message.createdAt.toISOString(),
+      readAt: message.readAt ? message.readAt.toISOString() : null,
+    }));
+  }
+
+  /**
+   * Mark a general message as read
+   */
+  async markMessageRead(messageId: string, recipientId: string): Promise<void> {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.recipientId !== recipientId) {
+      throw new ForbiddenException('You can only mark your own messages as read');
+    }
+
+    message.isRead = true;
+    message.readAt = new Date();
+    await this.messageRepository.save(message);
   }
 
   /**

@@ -9,6 +9,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/interfaces/auth-user.interface';
+import { LeadStatus } from '../leads/entities/lead.entity';
 import { ParentChildDto, ParentDailyReportDto, SendParentMessageDto, ParentAttendanceDto, ParentProgressDto, ParentMediaDto, ParentReportsQueryDto, ParentReportsResponseDto } from './dto/parent-children.dto';
 import { ParentInvoiceDto } from './dto/parent-dashboard-summary.dto';
 import { TeachersService } from '../teachers/teachers.service';
@@ -22,7 +23,7 @@ export class ParentDashboardController {
   constructor(
     private readonly parentDashboardService: ParentDashboardService,
     private readonly teachersService: TeachersService,
-  ) {}
+  ) { }
 
   @Get('summary')
   @Roles(AppRole.PARENT)
@@ -42,9 +43,13 @@ export class ParentDashboardController {
   @Get('children')
   @Roles(AppRole.PARENT)
   @ApiOperation({ summary: 'List children for the authenticated parent' })
+  @ApiQuery({ name: 'status', required: false, enum: LeadStatus })
   @ApiResponse({ status: 200, type: [ParentChildDto] })
-  async getChildren(@CurrentUser() user: AuthUser): Promise<ParentChildDto[]> {
-    return this.parentDashboardService.getChildren(user);
+  async getChildren(
+    @CurrentUser() user: AuthUser,
+    @Query('status') status?: LeadStatus,
+  ): Promise<ParentChildDto[]> {
+    return this.parentDashboardService.getChildren(user, status);
   }
 
   @Post('children/:leadId/messages')

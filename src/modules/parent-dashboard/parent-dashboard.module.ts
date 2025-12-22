@@ -15,6 +15,8 @@ import { StudentAttendance } from '../students/entities/student-attendance.entit
 import { LeadEntity } from '../leads/entities/lead.entity';
 import { LeadActivity } from '../leads/entities/lead-activity.entity';
 import { Media } from '../media/entities/media.entity';
+import { CheckInOutRecord } from '../checkinout/entities/check-in-out-record.entity';
+import { ProfileEntity } from '../users/entities/profile.entity';
 import { LeadsModule } from '../leads/leads.module';
 import { TeachersModule } from '../teachers/teachers.module';
 
@@ -36,11 +38,13 @@ import { TeachersModule } from '../teachers/teachers.module';
       LeadEntity,
       LeadActivity,
       Media,
+      CheckInOutRecord,
+      ProfileEntity,
     ]),
   ],
   controllers: [ParentDashboardController],
   providers: [ParentDashboardService],
 })
-export class ParentDashboardModule {}
+export class ParentDashboardModule { }
 
 
