@@ -359,7 +359,7 @@ export class AiController {
   }
 
   @Post('generate-response-suggestions')
-  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_OWNER, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF)
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_OWNER, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.TEACHER)
   @ApiOperation({
     summary: 'Generate response suggestions',
     description: 'AI-generated response suggestions for parent communications',

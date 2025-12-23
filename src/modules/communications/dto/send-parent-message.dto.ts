@@ -4,12 +4,22 @@ import { ParentMessageType } from '../entities/parent-message.entity';
 
 export class SendParentMessageDto {
   @ApiProperty({
-    description: 'Parent user ID (recipient)',
+    description: 'Parent user ID (recipient) - required if recipientEmail is not provided',
     example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
   })
   @IsUUID()
-  @IsNotEmpty()
-  recipientId: string;
+  @IsOptional()
+  recipientId?: string;
+
+  @ApiProperty({
+    description: 'Parent email address (recipient) - required if recipientId is not provided',
+    example: 'parent@example.com',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  recipientEmail?: string;
 
   @ApiProperty({
     description: 'Student/Lead ID (optional)',

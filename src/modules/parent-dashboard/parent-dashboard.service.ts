@@ -148,7 +148,8 @@ export class ParentDashboardService {
         createdAt: this.toIsoString(lead.createdAt),
         updatedAt: this.toIsoString(lead.updatedAt),
         teacherId: lead.assignedTo,
-        teacherName: lead.assignedTo ? await this.getProfileName(lead.assignedTo) : 'Unassigned',
+        // teacherName: lead.assignedTo ? await this.getProfileName(lead.assignedTo) : 'Unassigned',
+        teacherName: null,
         enrollment,
         waitlist: waitlist
           ? {

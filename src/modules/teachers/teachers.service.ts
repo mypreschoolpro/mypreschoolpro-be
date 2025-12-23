@@ -1364,38 +1364,43 @@ export class TeachersService {
     const updateValues: any[] = [];
     let paramIndex = 1;
 
-    if (dto.skillArea !== undefined) {
+    this.logger.debug(`Updating skill progress with DTO:`, JSON.stringify(dto));
+
+    if (dto.skillArea !== undefined && dto.skillArea !== null) {
       updateFields.push(`skill_area = $${paramIndex++}`);
       updateValues.push(dto.skillArea);
     }
-    if (dto.skillName !== undefined) {
+    if (dto.skillName !== undefined && dto.skillName !== null) {
       updateFields.push(`skill_name = $${paramIndex++}`);
       updateValues.push(dto.skillName);
     }
-    if (dto.currentLevel !== undefined) {
+    if (dto.currentLevel !== undefined && dto.currentLevel !== null) {
       updateFields.push(`current_level = $${paramIndex++}`);
       updateValues.push(dto.currentLevel);
     }
-    if (dto.targetLevel !== undefined) {
+    if (dto.targetLevel !== undefined && dto.targetLevel !== null) {
       updateFields.push(`target_level = $${paramIndex++}`);
       updateValues.push(dto.targetLevel);
     }
-    if (dto.observation !== undefined) {
+    if (dto.observation !== undefined && dto.observation !== null) {
       updateFields.push(`observation = $${paramIndex++}`);
       updateValues.push(dto.observation);
     }
-    if (dto.milestoneAchieved !== undefined) {
+    if (dto.milestoneAchieved !== undefined && dto.milestoneAchieved !== null) {
       updateFields.push(`milestone_achieved = $${paramIndex++}`);
       updateValues.push(dto.milestoneAchieved);
     }
-    if (dto.recordedDate !== undefined) {
+    if (dto.recordedDate !== undefined && dto.recordedDate !== null) {
       updateFields.push(`recorded_date = $${paramIndex++}`);
       updateValues.push(new Date(dto.recordedDate).toISOString().split('T')[0]);
     }
-    if (dto.nextSteps !== undefined) {
+    if (dto.nextSteps !== undefined && dto.nextSteps !== null) {
       updateFields.push(`next_steps = $${paramIndex++}`);
       updateValues.push(dto.nextSteps);
     }
+
+    this.logger.debug(`Update fields: ${updateFields.join(', ')}`);
+    this.logger.debug(`Update values:`, updateValues);
 
     if (updateFields.length === 0) {
       // No fields to update, just return the existing record
@@ -1405,15 +1410,16 @@ export class TeachersService {
       );
       const result = record[0];
       
-      // Get enrollment ID and student name
+      // Get enrollment ID and student name - ensure it belongs to teacher's class
       const enrollmentRaw = await this.enrollmentRepository.query(
         `SELECT e.id as enrollment_id, l.child_name
          FROM enrollment e
          LEFT JOIN leads l ON l.id = e.lead_id
-         WHERE e.lead_id = $1 AND e.status = 'active'
+         JOIN classes c ON c.id = e.class_id
+         WHERE e.lead_id = $1 AND e.status = 'active' AND c.teacher_id = $2
          ORDER BY e.created_at DESC
          LIMIT 1`,
-        [leadId],
+        [leadId, teacherId],
       );
 
       const enrollmentId = enrollmentRaw?.[0]?.enrollment_id || leadId;
@@ -1456,45 +1462,76 @@ export class TeachersService {
         recorded_date, next_steps, created_at, updated_at
     `;
 
-    const result = await this.skillProgressRepository.query(updateQuery, updateValues);
-    const updated = result[0];
+    this.logger.debug(`Update query: ${updateQuery}`);
+    this.logger.debug(`Query params:`, updateValues);
 
-    // Get enrollment ID and student name
+    const result = await this.skillProgressRepository.query(updateQuery, updateValues);
+    
+    if (!result || result.length === 0 || !result[0]) {
+      throw new NotFoundException('Failed to update skill progress record');
+    }
+
+    // Fetch the updated record again to ensure we have the latest values
+    // Sometimes RETURNING clause might not return updated values correctly
+    const freshRecord = await this.skillProgressRepository.query(
+      `SELECT id, student_id as lead_id, teacher_id, skill_area, skill_name,
+       current_level, target_level, observation, milestone_achieved,
+       recorded_date, next_steps, created_at, updated_at
+       FROM student_skill_progress
+       WHERE id = $1 LIMIT 1`,
+      [recordId],
+    );
+
+    if (!freshRecord || freshRecord.length === 0) {
+      throw new NotFoundException('Failed to retrieve updated skill progress record');
+    }
+
+    const updated = freshRecord[0];
+    this.logger.debug(`Updated record from database:`, JSON.stringify(updated));
+
+    // Get enrollment ID and student name - ensure it belongs to teacher's class
     const enrollmentRaw = await this.enrollmentRepository.query(
       `SELECT e.id as enrollment_id, l.child_name
        FROM enrollment e
        LEFT JOIN leads l ON l.id = e.lead_id
-       WHERE e.lead_id = $1 AND e.status = 'active'
+       JOIN classes c ON c.id = e.class_id
+       WHERE e.lead_id = $1 AND e.status = 'active' AND c.teacher_id = $2
        ORDER BY e.created_at DESC
        LIMIT 1`,
-      [leadId],
+      [leadId, teacherId],
     );
 
     const enrollmentId = enrollmentRaw?.[0]?.enrollment_id || leadId;
     const studentName = enrollmentRaw?.[0]?.child_name || 'Unknown Student';
 
-    return {
-      id: updated.id,
+    // Use the fresh database values directly - they should have the updated values
+    const response: SkillProgressResponseDto = {
+      id: updated.id || recordId,
       studentId: enrollmentId,
-      studentName,
-      teacherId: updated.teacher_id,
-      skillArea: updated.skill_area,
-      skillName: updated.skill_name,
-      currentLevel: updated.current_level,
-      targetLevel: updated.target_level,
-      observation: updated.observation,
-      milestoneAchieved: updated.milestone_achieved,
+      studentName: studentName,
+      teacherId: updated.teacher_id || teacherId,
+      skillArea: updated.skill_area || '',
+      skillName: updated.skill_name || '',
+      currentLevel: Number(updated.current_level) || 1,
+      targetLevel: Number(updated.target_level) || 5,
+      observation: updated.observation || '',
+      milestoneAchieved: Boolean(updated.milestone_achieved),
       recordedDate: updated.recorded_date instanceof Date
         ? updated.recorded_date.toISOString().split('T')[0]
-        : updated.recorded_date,
-      nextSteps: updated.next_steps,
+        : (updated.recorded_date ? String(updated.recorded_date).split('T')[0] : new Date().toISOString().split('T')[0]),
+      nextSteps: updated.next_steps ?? null,
       createdAt: updated.created_at instanceof Date
         ? updated.created_at.toISOString()
-        : updated.created_at,
+        : (updated.created_at ? String(updated.created_at) : new Date().toISOString()),
       updatedAt: updated.updated_at instanceof Date
         ? updated.updated_at.toISOString()
-        : updated.updated_at,
+        : (updated.updated_at ? String(updated.updated_at) : new Date().toISOString()),
     };
+
+    this.logger.debug(`Final response:`, JSON.stringify(response));
+
+    this.logger.log(`Updated skill progress record ${recordId} successfully`);
+    return response;
   }
 
   /**

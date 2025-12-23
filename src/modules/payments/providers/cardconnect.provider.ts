@@ -127,7 +127,7 @@ export class CardConnectProvider implements IPaymentProvider {
         // The iframe tokenizer returns a token that should be used as the account number
         // When using a token, expiry and CVV are NOT needed
         payload.account = metadata.token;
-        payload.cvv2 = metadata.cvv;
+        // payload.cvv2 = metadata.cvv;
         this.logger.log('Using token-based payment (from iframe tokenizer)');
         this.logger.debug('Token (first 10 chars):', metadata.token.substring(0, 10) + '...');
       } else {
@@ -422,7 +422,7 @@ export class CardConnectProvider implements IPaymentProvider {
         retref: paymentId,
       };
 
-      const response = await fetch(`${this.config.apiUrl}void`, {
+      const response = await fetch(`${this.config.apiUrl}/void`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

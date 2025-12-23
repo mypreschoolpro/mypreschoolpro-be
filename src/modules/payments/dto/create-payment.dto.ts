@@ -162,3 +162,22 @@ export class RefundPaymentDto {
   @IsString()
   reason?: string;
 }
+
+export class VoidPaymentDto {
+  @ApiProperty({
+    description: 'Payment provider',
+    enum: PaymentProvider,
+    example: PaymentProvider.CARDCONNECT,
+    required: true,
+  })
+  @IsEnum(PaymentProvider)
+  provider: PaymentProvider;
+
+  @ApiProperty({
+    description: 'Payment ID (retref) to void',
+    example: '123456789012',
+    required: true,
+  })
+  @IsString()
+  paymentId: string;
+}

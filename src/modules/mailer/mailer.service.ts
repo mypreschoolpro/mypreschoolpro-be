@@ -63,9 +63,11 @@ export class MailerService {
     this.appUrl = this.configService.get<string>('app.frontendUrl') || this.configService.get<string>('APP_URL', 'http://localhost:5173');
     
     // Development mode: Override recipient email for testing (only works with Resend test domains)
-    // Set EMAIL_TEST_RECIPIENT to your verified email (e.g., colleen@mypreschoolpro.com)
+    // Set EMAIL_TEST_RECIPIENT to your verified email (e.g., jahanzaibimrandev@gmail.com)
     // This allows testing without domain verification
-    this.testModeEmail = this.configService.get<string>('EMAIL_TEST_RECIPIENT') || null;
+    this.testModeEmail = this.configService.get<string>('EMAIL_TEST_RECIPIENT') || 
+                         this.configService.get<string>('email.testRecipient') ||
+                         'jahanzaibimrandev@gmail.com'; // Default test email
     
     if (this.testModeEmail) {
       this.logger.warn(`⚠️  EMAIL TEST MODE: All emails will be sent to ${this.testModeEmail} instead of actual recipients`);

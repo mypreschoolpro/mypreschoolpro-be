@@ -42,6 +42,11 @@ export interface IPaymentProvider {
   refundPayment(paymentId: string, amount?: number): Promise<RefundResult>;
 
   /**
+   * Void a transaction (cancel before settlement)
+   */
+  voidTransaction?(paymentId: string): Promise<RefundResult>;
+
+  /**
    * Verify webhook signature and parse event
    */
   verifyWebhook(payload: any, signature: string): Promise<any>;

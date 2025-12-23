@@ -13,7 +13,7 @@ import {
   ApiInternalServerErrorResponse,
 } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
-import { CreatePaymentDto, CreateCustomerDto, RefundPaymentDto } from './dto/create-payment.dto';
+import { CreatePaymentDto, CreateCustomerDto, RefundPaymentDto, VoidPaymentDto } from './dto/create-payment.dto';
 import {
   PaymentResponseDto,
   PaymentIntentResponseDto,

@@ -112,6 +112,20 @@ export class PaymentsService {
   }
 
   /**
+   * Void a transaction (cancel before settlement)
+   * Only supported for CardConnect
+   */
+  async voidTransaction(provider: PaymentProvider, paymentId: string) {
+    this.logger.log(`Voiding transaction ${paymentId} with ${provider}`);
+    
+    if (provider !== PaymentProvider.CARDCONNECT) {
+      throw new BadRequestException(`Void transaction not supported for ${provider}. Only CardConnect supports void transactions.`);
+    }
+    
+    return this.cardConnectProvider.voidTransaction(paymentId);
+  }
+
+  /**
    * Verify webhook from provider
    */
   async verifyWebhook(provider: PaymentProvider, payload: any, signature: string) {
