@@ -1,0 +1,42 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches:
+      - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_KEY_PROD }}
+
+      - name: Deploy to EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER_PROD }}@${{ secrets.EC2_HOST_PROD }} << 'EOF'
+            cd ${{ secrets.PROJECT_DIR_PROD }}
+
+            # Stash any local changes (if any)
+            git stash push -m "auto-stash-before-deploy" || true
+            git pull origin production
+            git stash pop || true
+
+            # Load NVM so node, npm, pm2 are available
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+            # Install dependencies and build
+            npm install --production
+            npm run build
+
+            # Reload backend using PM2
+            pm2 reload mypreschoolpro || pm2 start dist/main.js --name mypreschoolpro
+          EOF
