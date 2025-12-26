@@ -34,7 +34,7 @@ jobs:
             [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
             # Install dependencies and build
-            npm install --production
+            npm install
             npm run build
 
             # Reload backend using PM2
